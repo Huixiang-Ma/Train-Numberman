@@ -1,0 +1,76 @@
+# 文旅创新智脑 · 多模态文旅知识检索与生成（阶段二 / 工单17）
+# 严格对齐 docs/01-技术栈选型总表.md，不使用替代实现。
+#
+# 工单编号：人工智能CV-AIGC-17-文旅Agent任务工单-多模态文旅知识检索与生成
+
+# ---- 服务层：运行时与框架 ----
+fastapi>=0.116
+uvicorn[standard]>=0.35
+pydantic>=2.11
+pydantic-settings>=2.0
+python-multipart>=0.0.9
+httpx>=0.28
+
+# ---- 数据层：关系库 PostgreSQL 16 + PostGIS ----
+SQLAlchemy>=2.0.36
+psycopg2-binary>=2.9.10
+GeoAlchemy2>=0.16
+alembic>=1.14
+
+# ---- 数据层：缓存 / 异步任务队列（Celery + Redis）----
+redis>=5.2
+celery>=5.4
+
+# ---- 数据层：向量数据库 Milvus（HNSW）----
+pymilvus>=2.5
+
+# ---- 数据层：对象存储 MinIO ----
+minio>=7.2
+
+# ---- 向量化与重排：BGE-M3 / Chinese-CLIP / bge-reranker-v2 ----
+sentence-transformers>=5.0
+transformers>=4.44
+torch>=2.2
+Pillow>=10.0
+
+# ---- CV 与文字识别：PaddleOCR / PP-OCRv4 ----
+paddleocr>=3.0
+paddlepaddle>=3.0
+
+# ---- 语音：FunASR（ASR）/ CosyVoice（TTS，独立部署）----
+funasr>=1.1
+
+# ---- 唇形视位：中文声韵母切分（工单18 数字人口型）----
+pypinyin>=0.55
+
+# ---- Agent 编排：LangGraph + LangChain + MCP ----
+langgraph>=0.2
+langchain>=0.3
+langchain-community>=0.3
+
+# ---- 文档解析：unstructured / MinerU ----
+unstructured>=0.16
+
+# ---- 安全：OAuth2 + JWT + RBAC ----
+python-jose[cryptography]>=3.3
+passlib[bcrypt]>=1.7
+
+# ---- 异步任务执行 ----
+celery>=5.4
+
+# ---- 阶段三（工单18）：CV 深度图像任务与感知 ----
+# 注：以下依赖在阶段三/四的功能中实际被 import，此前未登记在清单里，
+#     容器化时会因缺包直接启动失败，故在此补齐。
+ultralytics>=8.3          # YOLO11 检测/分类 + SAM 2 分割
+mediapipe>=0.10           # 手势识别 / 表情（blendshapes）
+scipy>=1.13               # 分割掩码形态学清理（闭运算/填洞/连通域）
+opencv-python-headless>=4.10  # 视频帧抽取、海报封面（FFmpeg 之外的补充，服务端无需 GUI）
+
+# ---- 阶段四（工单19）：AIGC 内容生成 ----
+python-pptx>=1.0          # 活动回顾 PPT（docs/01 §4.7 文档生成）
+numpy>=1.26               # 图像矩阵运算（Pillow/OpenCV 交互）
+
+# ---- 可选依赖见 requirements-assets.txt ----
+# 形象资产流水线的第三种去背景方式（rembg）需额外下载 u2net 权重、
+# 且服务端运行时不依赖它，故单独成文件，不混入运行时依赖：
+#   pip install -r requirements-assets.txt
