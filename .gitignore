@@ -1,0 +1,57 @@
+# ============================================================
+# 文旅创新智脑 · 版本控制排除规则
+#
+# 只跟踪源码与文档。以下排除项均为可再生成或需另行获取的产物，
+# 合计约 1.45 GB（模型权重 1.08 GB + Docker 数据卷 250 MB），
+# 不应进入版本库。
+# ============================================================
+
+# ---- Node / 前端构建产物 ----
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# ---- 模型权重（约 1.08 GB，需按 README 另行获取）----
+# 含 BGE-M3 / Chinese-CLIP 及 YOLO 权重；不入库，部署时下载
+models/
+*.pt
+*.pth
+*.onnx
+*.safetensors
+*.task
+
+# ---- Docker 数据卷与运行时产物（约 250 MB）----
+deploy/volumes/
+deploy/initdb/
+deploy/models/
+deploy/logs/
+*.log
+
+# ---- 环境变量与密钥 ----
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# ---- 子代理驱动开发的进度账本（临时文件，勿入库）----
+.superpowers/
+
+# ---- 编辑器与操作系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ---- 临时文件 ----
+*.tmp
+*.bak
