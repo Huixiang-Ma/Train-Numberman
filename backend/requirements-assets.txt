@@ -1,0 +1,18 @@
+# 文旅创新智脑 · 可选依赖：形象资产处理流水线
+# 工单编号：人工智能CV-AIGC-20-文旅Agent任务工单-功能集成测试与部署
+#
+# 为什么单独成文件：
+#   这些包只被 `scripts/prepare_avatar.py` 的**可选分支**使用，服务端运行时不需要。
+#   混入 requirements.txt 会显著增大生产镜像，且 rembg 首次运行要联网下载 u2net 权重，
+#   在离线或受限网络下反而成为故障点。
+#
+# 安装：
+#   pip install -r requirements-assets.txt
+#
+# 对应关系（scripts/prepare_avatar.py 的 --method 参数）：
+#   keying  纯色/影棚底连通域抠图   → 无额外依赖（默认，本机实测效果最好）
+#   sam     SAM 2 框提示分割        → 依赖 requirements.txt 中的 ultralytics
+#   rembg   u2net 分割模型          → 依赖本文件
+
+rembg>=2.0
+onnxruntime>=1.20
