@@ -1,0 +1,72 @@
+{
+  "base": "http://127.0.0.1:8100",
+  "rounds": 9,
+  "endpoints": [
+    {
+      "label": "就绪检查（含 4 类组件健康探测）",
+      "endpoint": "GET /api/v1/readyz",
+      "rounds": 9,
+      "status": 200,
+      "errors": 0,
+      "min": 16.63,
+      "mean": 25.15,
+      "p50": 20.7,
+      "p95": 58.02,
+      "max": 58.02
+    },
+    {
+      "label": "数字人形象与能力集",
+      "endpoint": "GET /api/v1/avatar",
+      "rounds": 9,
+      "status": 200,
+      "errors": 0,
+      "min": 2.88,
+      "mean": 3.45,
+      "p50": 3.26,
+      "p95": 4.55,
+      "max": 4.55
+    },
+    {
+      "label": "创作列表（DB 查询 + 分页）",
+      "endpoint": "GET /api/v1/create/assets",
+      "rounds": 9,
+      "status": 200,
+      "errors": 0,
+      "min": 12.69,
+      "mean": 23.14,
+      "p50": 14.37,
+      "p95": 82.41,
+      "max": 82.41
+    },
+    {
+      "label": "活动推荐（PostGIS 距离 + 打分）",
+      "endpoint": "POST /api/v1/activity/recommend",
+      "rounds": 9,
+      "status": 200,
+      "errors": 0,
+      "min": 25.5,
+      "mean": 603.59,
+      "p50": 36.06,
+      "p95": 5161.42,
+      "max": 5161.42
+    },
+    {
+      "label": "导览地图（Pillow 直绘 + 落库 + 对象存储）",
+      "endpoint": "POST /api/v1/create/map",
+      "rounds": 9,
+      "status": 200,
+      "errors": 0,
+      "min": 319.36,
+      "mean": 549.3,
+      "p50": 563.35,
+      "p95": 775.8,
+      "max": 775.8
+    }
+  ],
+  "throughput": {
+    "concurrency": 32,
+    "success": 32,
+    "elapsed": 0.811,
+    "qps": 39.5
+  }
+}
