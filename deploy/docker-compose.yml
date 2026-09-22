@@ -1,0 +1,113 @@
+# 文旅创新智脑 · 数据层与基础设施
+# 依据：docs/01-技术栈选型总表.md（数据层 + 基础设施）
+# 工单编号：人工智能CV-AIGC-17-文旅Agent任务工单-多模态文旅知识检索与生成
+#
+# 用法：docker compose -p wenlvdigital -f deploy/docker-compose.yml up -d
+# 说明：容器名、卷、网络均以 wenlv- / wenlvdigital 前缀隔离，不影响机器上其他项目。
+#
+# 技术栈对应：
+#   关系数据库  PostgreSQL 16 + PostGIS   → localhost:5432
+#   缓存/队列   Redis 7                   → localhost:6379
+#   对象存储    MinIO                     → localhost:9000 / 控制台 9001
+#   向量数据库  Milvus 2.5（HNSW）         → localhost:19530 / 指标 9091
+
+services:
+  postgres:
+    container_name: wenlv-postgres
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: wenlv
+      POSTGRES_USER: wenlv
+      POSTGRES_PASSWORD: wenlv_pass
+      TZ: Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./volumes/postgres:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    command: ["postgres", "-c", "timezone=Asia/Shanghai"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wenlv -d wenlv"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    container_name: wenlv-redis
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./volumes/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  minio:
+    container_name: wenlv-minio
+    image: quay.io/minio/minio:RELEASE.2024-05-28T17-19-04Z
+    environment:
+      MINIO_ROOT_USER: wenlv
+      MINIO_ROOT_PASSWORD: wenlv_minio_pass
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ./volumes/minio:/data
+    command: minio server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    restart: unless-stopped
+
+  etcd:
+    container_name: wenlv-etcd
+    image: quay.io/coreos/etcd:v3.5.18
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - ./volumes/etcd:/etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  milvus:
+    container_name: wenlv-milvus
+    image: milvusdb/milvus:v2.5.4
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: wenlv
+      MINIO_SECRET_ACCESS_KEY: wenlv_minio_pass
+    volumes:
+      - ./volumes/milvus:/var/lib/milvus
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      - etcd
+      - minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 20s
+      start_period: 90s
+      timeout: 10s
+      retries: 10
+    restart: unless-stopped
