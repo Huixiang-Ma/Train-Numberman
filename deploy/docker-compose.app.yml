@@ -1,0 +1,138 @@
+# 文旅创新智脑 · 应用层编排（后端 / 异步 Worker / 前端）
+# 工单编号：人工智能CV-AIGC-20-文旅Agent任务工单-功能集成测试与部署
+#
+# 与基础设施编排配合使用（同一项目、同一默认网络，服务名可直接互访）：
+#
+#   docker compose -p wenlvdigital -f deploy/docker-compose.yml -f deploy/docker-compose.app.yml up -d --build
+#
+# 只看应用层（依赖已就绪时）：
+#   docker compose -p wenlvdigital -f deploy/docker-compose.app.yml up -d --build
+#
+# 与开发环境的差异：此处所有连接地址指向**容器服务名**而非 127.0.0.1，
+# 因此 .env 里的本机地址不适用，统一由下面的 environment 覆盖。
+
+services:
+  backend:
+    container_name: wenlv-backend
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    environment:
+      # 数据层与中间件：容器网络内按服务名互访
+      DATABASE_URL: postgresql+psycopg2://wenlv:wenlv_pass@postgres:5432/wenlv
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      MILVUS_URI: http://milvus:19530
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: wenlv
+      MINIO_SECRET_KEY: wenlv_minio_pass
+      DB_SCHEMA: wenlv
+      API_PREFIX: /api/v1
+      DEBUG: "false"
+
+      # 云端模型：必须提供 Key，缺失时 compose 直接报错而不是静默降级
+      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:?请在环境变量或 deploy/.env 中提供 SILICONFLOW_API_KEY}
+      SILICONFLOW_BASE_URL: https://api.siliconflow.cn/v1
+      EMBEDDING_MODE: cloud
+      RERANKER_MODE: cloud
+      LLM_MODE: cloud
+      ASR_MODE: cloud
+      TTS_MODE: cloud
+      CLIP_MODE: local
+
+      # 本地模型权重路径（挂载到 /models）
+      MODEL_DIR: /models
+      CLIP_PATH: /models/chinese-clip
+      MEDIAPIPE_MODEL_DIR: /models/mediapipe
+      YOLO_DET_MODEL: /models/yolo11n.pt
+      YOLO_CLS_MODEL: /models/yolo11n-cls.pt
+      SAM_MODEL: /models/sam2.1_t.pt
+
+      # 检索与生成参数
+      TOP_K: "10"
+      RERANK_TOP_N: "3"
+      WARMUP_PROVIDERS: "true"
+
+      # 阶段四（工单19）：图像生成与视频合成
+      IMAGE_MODE: cloud
+      SF_IMAGE_MODEL: Qwen/Qwen-Image
+      SF_IMAGE_EDIT_MODEL: Qwen/Qwen-Image-Edit
+      FFMPEG_BIN: ffmpeg
+      VIDEO_MAX_IMAGES: "12"
+
+      # 阶段五（工单20）：安全与合规
+      CONTENT_BLOCKLIST: ${CONTENT_BLOCKLIST:-赌博,毒品,暴力,色情,诈骗,枪支,违禁品,传销}
+      SHARE_BASE_URL: ${SHARE_BASE_URL:-http://127.0.0.1:8200}
+      JWT_SECRET: ${JWT_SECRET:?请提供 JWT_SECRET（生产环境务必替换默认值）}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请提供 ADMIN_PASSWORD}
+    volumes:
+      # 模型权重只读挂载：更新模型只需替换宿主目录并重启，无需重建镜像
+      # （docs/01 §六「模型热更新：模型仓库 + 滚动重载」）
+      - ../models:/models:ro
+    ports:
+      - "8100:8100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    # 本地模型加载峰值内存较高（Chinese-CLIP + PaddleOCR + YOLO + SAM 2），
+    # 生产建议按实测上调；此处给出保守下限。
+    deploy:
+      resources:
+        limits:
+          memory: 8g
+
+  # AIGC 异步任务：图像生成 / 视频合成 / 文档生成（工单19 走 Celery + Redis）
+  celery-worker:
+    container_name: wenlv-celery
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    command: celery -A app.tasks.celery_app worker --loglevel=info --pool=solo
+    environment:
+      DATABASE_URL: postgresql+psycopg2://wenlv:wenlv_pass@postgres:5432/wenlv
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      MILVUS_URI: http://milvus:19530
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: wenlv
+      MINIO_SECRET_KEY: wenlv_minio_pass
+      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:?请提供 SILICONFLOW_API_KEY}
+      IMAGE_MODE: cloud
+      SF_IMAGE_MODEL: Qwen/Qwen-Image
+      SF_IMAGE_EDIT_MODEL: Qwen/Qwen-Image-Edit
+      FFMPEG_BIN: ffmpeg
+      CONTENT_BLOCKLIST: ${CONTENT_BLOCKLIST:-赌博,毒品,暴力,色情,诈骗,枪支,违禁品,传销}
+      CLIP_PATH: /models/chinese-clip
+      MODEL_DIR: /models
+    volumes:
+      - ../models:/models:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    container_name: wenlv-frontend
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8200:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
