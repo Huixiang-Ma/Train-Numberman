@@ -1,0 +1,131 @@
+[
+  {
+    "id": "kb-arch-001",
+    "title": "主殿·抬梁式木构",
+    "content": "主殿面阔五间、进深三间，采用抬梁式梁架：柱上架梁，梁上立瓜柱，层层叠置形成屋架。节点多用榫卯，不用铁钉。屋架举折平缓，出檐深远，兼顾遮阳与避雨。",
+    "modality": "text",
+    "tags": ["古建筑", "木构", "斗拱", "梁架"],
+    "source": "示例：景区古建档案",
+    "authority": "official"
+  },
+  {
+    "id": "kb-arch-002",
+    "title": "歇山顶与正脊吻兽",
+    "content": "屋面为歇山顶，由一条正脊、四条垂脊、四条戗脊组成，形体收放有致。正脊两端设吻兽，兼具压脊的构造作用与礼制象征。屋面坡度与檐口出挑共同决定了建筑的整体比例。",
+    "modality": "text",
+    "tags": ["古建筑", "屋面", "歇山顶", "吻兽"],
+    "source": "示例：景区古建档案",
+    "authority": "official"
+  },
+  {
+    "id": "kb-arch-003",
+    "title": "主殿正立面影像",
+    "content": "主殿正立面，可见台基、柱列与屋身三段式构图，檐下斗拱层数体现建筑等级。适合作为建筑比例与装饰做法的对照材料。",
+    "modality": "image",
+    "media_uri": "minio://wenlv-media/media-sample/hall-facade.jpg",
+    "tags": ["古建筑", "影像", "立面", "斗拱"],
+    "source": "示例：景区影像库",
+    "authority": "official"
+  },
+  {
+    "id": "kb-stele-001",
+    "title": "修葺碑记",
+    "content": "碑文楷书阴刻，记述本次修葺的缘由、捐资名录与工匠分工。碑末有纪年，可与地方志互证。碑侧另存小块题记，记录后续补修。是研究地方营造组织与宗族参与的一手材料。",
+    "modality": "text",
+    "tags": ["碑刻", "石刻", "OCR", "纪年"],
+    "source": "示例：碑刻整理稿",
+    "authority": "expert"
+  },
+  {
+    "id": "kb-stele-002",
+    "title": "碑刻拓片影像",
+    "content": "碑刻拓片，字口清晰，适合做 OCR 识别与释文对照。拓片可反映原碑的行款、字体与残损情况。",
+    "modality": "image",
+    "media_uri": "minio://wenlv-media/media-sample/stele-rubbing.jpg",
+    "tags": ["碑刻", "影像", "拓片"],
+    "source": "示例：景区影像库",
+    "authority": "official"
+  },
+  {
+    "id": "kb-mural-001",
+    "title": "东壁壁画叙事",
+    "content": "壁画以矿物颜料绘制，呈连续叙事：起首为出行场景，中段为主体仪仗，末端为宴饮。采用散点透视，人物衣纹线条流畅，可据服饰与器物判断年代。画面局部有起甲与褪色，已做保护性修复。",
+    "modality": "text",
+    "tags": ["壁画", "彩绘", "叙事", "文物保护"],
+    "source": "示例：文物保护档案",
+    "authority": "official"
+  },
+  {
+    "id": "kb-mural-002",
+    "title": "壁画局部影像",
+    "content": "壁画人物局部，可见线条勾勒与矿物颜料层，用于观察笔法与色彩层次。",
+    "modality": "image",
+    "media_uri": "minio://wenlv-media/media-sample/mural-detail.jpg",
+    "tags": ["壁画", "影像", "局部"],
+    "source": "示例：景区影像库",
+    "authority": "official"
+  },
+  {
+    "id": "kb-figure-001",
+    "title": "先贤造像与基座题记",
+    "content": "造像为地方先贤纪念像，面容端肃、手持书卷。基座题记交代立像时间与倡建者，可与地方人物志互相印证，反映后世对先贤功业的追念。",
+    "modality": "text",
+    "tags": ["造像", "人物", "题记"],
+    "source": "示例：地方人物志摘编",
+    "authority": "publication"
+  },
+  {
+    "id": "kb-eco-001",
+    "title": "乡土树种与生态价值",
+    "content": "本地常见乡土树种，叶形与树皮特征明显，耐旱耐瘠，常用于区域生态修复。花期与果期相对固定，是园区物候观察与科普教育的重要对象。",
+    "modality": "text",
+    "tags": ["动植物", "生态", "科普"],
+    "source": "示例：区域植物志摘编",
+    "authority": "publication"
+  },
+  {
+    "id": "kb-ich-001",
+    "title": "非遗手作·碑拓体验",
+    "content": "碑拓体验包含上纸、捶打、上墨、揭取四个步骤，适合亲子参与，单次时长约 40 分钟。体验点位于研学角，需提前预约，可带走手作拓片。",
+    "modality": "text",
+    "tags": ["非遗", "亲子", "手作", "活动"],
+    "source": "示例：景区活动手册",
+    "authority": "official"
+  },
+  {
+    "id": "kb-route-001",
+    "title": "半日核心动线",
+    "content": "推荐半日动线：主殿看木构与斗拱（约 40 分钟）→ 沿廊观东壁壁画（约 30 分钟）→ 水榭休憩（约 20 分钟）→ 登高看全景（约 30 分钟）。全程步行约 2.4 公里，含三处拍照点位，途经两处休息点与卫生间。",
+    "modality": "text",
+    "tags": ["路线", "动线", "摄影"],
+    "source": "示例：景区导览手册",
+    "authority": "official"
+  },
+  {
+    "id": "kb-route-002",
+    "title": "适老化游览注意事项",
+    "content": "为长辈游览建议：优先选择平缓路线，全程约 1.2 公里，含两处有座休息点；避开正午高温时段；地面湿滑路段注意防滑；建议随身补水并携带常用药品。景区提供轮椅借用与电梯接驳。",
+    "modality": "text",
+    "tags": ["适老", "路线", "注意事项"],
+    "source": "示例：游客服务手册",
+    "authority": "official"
+  },
+  {
+    "id": "kb-food-001",
+    "title": "本地特色美食三类",
+    "content": "本地特色可归为三类：一是传统面点，制作讲究发酵与火候；二是时令河鲜，讲求当日现做；三是非遗手工小吃，多在老巷售卖。建议按步行距离与口碑排序后依次体验，避开集中排队时段。",
+    "modality": "text",
+    "tags": ["美食", "非遗", "攻略"],
+    "source": "示例：文旅美食手册",
+    "authority": "official"
+  },
+  {
+    "id": "kb-activity-001",
+    "title": "节令活动与参与方式",
+    "content": "节令期间设有传统手作、夜间灯彩与实景演绎三类活动。手作类需提前预约，灯彩类开放时段较长，实景演绎按场次入场。建议提前在导览端查看当日场次并规划动线。",
+    "modality": "text",
+    "tags": ["活动", "节令", "夜游"],
+    "source": "示例：景区活动手册",
+    "authority": "official"
+  }
+]
