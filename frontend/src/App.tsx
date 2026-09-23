@@ -4,7 +4,11 @@
  *
  * 原来 217 行的单页已迁移为 apps/toc/pages/GuidePage.tsx（路由 /guide）。
  * 两端分流靠路径前缀：`/admin` 走 ToB 控制台，其余走 ToC 游客端。
- * 全量路由来自 routes.ts，未实现的模块渲染 EmptyState 并标注工单依据。
+ * 全量路由来自 routes.ts。
+ *
+ * 截至批次 6，注册表中的 19 条路由**已全部实现**，renderRoute 的 EmptyState 分支
+ * 不再有实际命中者；它作为安全网保留（新增路由但忘了接线时，页面会如实说明
+ * 而不是白屏），并由 readyRoutes.test.tsx 的「全覆盖」断言守住这一点。
  *
  * 注意 index 路由的写法：react-router v6 中 index 路由**不得**同时带 path，
  * 否则会与父路由的 path 冲突；因此壳根单独用 <Route index>，其余子路由用相对路径。
@@ -61,6 +65,21 @@ export default function App() {
             .map((route) => (
               <Route key={route.path} path={route.path.replace('/admin/', '')} element={renderRoute(route.path)} />
             ))}
+          {/*
+            控制台内的未知路径兜底。缺了它，/admin/typo 会匹配到壳但匹配不到任何子路由，
+            渲染出"只有侧栏、内容区空白"的页面 —— 现场会以为系统坏了。
+            ToC 侧的未知路径由最外层的 * 兜回首页。
+          */}
+          <Route
+            path="*"
+            element={
+              <EmptyState
+                tone="cool"
+                title="控制台页面不存在"
+                desc="该路径未在控制台注册。请从左侧栏选择功能，或返回控制台总览。"
+              />
+            }
+          />
         </Route>
 
         {/* ToC 游客端（移动优先，暖色） */}

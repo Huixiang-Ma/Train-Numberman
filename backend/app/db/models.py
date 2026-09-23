@@ -6,10 +6,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from geoalchemy2 import Geometry
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Table, Text, Column, func
+from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Table, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -333,3 +333,196 @@ class AuditLog(TimestampMixin, Base):
     client_ip: Mapped[str] = mapped_column(String(64), default="")  # 已脱敏
     role: Mapped[str] = mapped_column(String(32), default="guest")
     trace_id: Mapped[str] = mapped_column(String(32), index=True, default="")
+
+
+# ==========================================================================
+# docs/09 G3 · 票务域（批次 5）
+#
+# 边界声明（docs/09 §3.2）：设计到「订单闭环 + 核销」，
+# 即 票种 → 时段库存 → 下单 → 支付占位 → 电子票 → 核销。
+# **支付通道与资金结算不在范围内**（涉支付牌照与"二清"），
+# 因此 ticket_order 只保留 payment_ref 占位字段，不接真实通道。
+# ==========================================================================
+class TicketType(TimestampMixin, Base):
+    """票种：挂在景区下的可售单元。"""
+
+    __tablename__ = "ticket_type"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    park_id: Mapped[str] = mapped_column(ForeignKey("park.id"), index=True)
+    name: Mapped[str] = mapped_column(String(128), index=True)
+    # 成人 adult / 学生 student / 老人 senior / 亲子 family / 联票 combo
+    category: Mapped[str] = mapped_column(String(32), default="adult", index=True)
+    # 价格用**分**存整数而不是浮点数：浮点金额在累加与比价时会产生 0.01 级误差，
+    # 票务对账不能容忍这种误差。
+    price_cents: Mapped[int] = mapped_column(Integer, default=0)
+    currency: Mapped[str] = mapped_column(String(8), default="CNY")
+    refundable: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 有效天数（自入园日起算）；联票常大于 1
+    valid_days: Mapped[int] = mapped_column(Integer, default=1)
+    notice: Mapped[str] = mapped_column(Text, default="")
+    # on_sale 在售 / off_shelf 下架
+    status: Mapped[str] = mapped_column(String(16), default="on_sale", index=True)
+
+    park = relationship("Park")
+    slots = relationship("TicketSlot", back_populates="ticket_type")
+
+
+class TicketSlot(TimestampMixin, Base):
+    """时段库存：某个票种在某日某时段的余票。"""
+
+    __tablename__ = "ticket_slot"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    ticket_type_id: Mapped[str] = mapped_column(ForeignKey("ticket_type.id"), index=True)
+    slot_date: Mapped[date] = mapped_column(Date, index=True)
+    # 时段用 "HH:MM" 字符串而不是 Time 类型：票面只需展示与比较，
+    # 且能避开 tzinfo 造成的"08:00 存进去、取出来变 16:00"这类时区陷阱。
+    start_time: Mapped[str] = mapped_column(String(8), default="00:00")
+    end_time: Mapped[str] = mapped_column(String(8), default="23:59")
+    inventory: Mapped[int] = mapped_column(Integer, default=0)
+    sold: Mapped[int] = mapped_column(Integer, default=0)
+
+    ticket_type = relationship("TicketType", back_populates="slots")
+
+
+class TicketOrder(TimestampMixin, Base):
+    """订单：pending → paid → 已核销 / 退款中 → 已退款 / 已取消。"""
+
+    __tablename__ = "ticket_order"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    order_no: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    # 游客标识：本项目无游客账号体系，沿用 share/creation 的"无账号"策略，
+    # 由前端生成匿名 ref（随机串），用于"我的订单"归集。
+    visitor_ref: Mapped[str] = mapped_column(String(64), index=True, default="")
+    park_id: Mapped[str] = mapped_column(ForeignKey("park.id"), index=True)
+    ticket_type_id: Mapped[str] = mapped_column(ForeignKey("ticket_type.id"), index=True)
+    slot_id: Mapped[str] = mapped_column(ForeignKey("ticket_slot.id"), index=True)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    amount_cents: Mapped[int] = mapped_column(Integer, default=0)
+    contact_name: Mapped[str] = mapped_column(String(64), default="")
+    # 联系方式属个人信息：接口返回时按 core/observability.mask_sensitive 脱敏展示
+    contact_phone: Mapped[str] = mapped_column(String(32), default="")
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    # 支付占位（见本节顶部边界声明）：只记录"支付已受理"的流水号，不接真实通道
+    payment_ref: Mapped[str] = mapped_column(String(64), default="")
+    booked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    checked_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_reason: Mapped[str] = mapped_column(Text, default="")
+
+    tickets = relationship("DigitalTicket", back_populates="order")
+
+
+class DigitalTicket(TimestampMixin, Base):
+    """电子票：核销的对象，一单可多张。"""
+
+    __tablename__ = "digital_ticket"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    order_id: Mapped[str] = mapped_column(ForeignKey("ticket_order.id"), index=True)
+    # 票号：展示与人工核对用
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    # 二维码载荷用随机 token，**不把订单信息编码进去**：
+    # 否则票面二维码被反解即可得到手机号等个人信息。
+    qr_payload: Mapped[str] = mapped_column(String(64), default="")
+    # valid 有效 / checked_in 已核销 / expired 已过期 / refunded 已退
+    status: Mapped[str] = mapped_column(String(16), default="valid", index=True)
+    checked_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    gate: Mapped[str] = mapped_column(String(32), default="")
+
+    order = relationship("TicketOrder", back_populates="tickets")
+
+
+# ==========================================================================
+# docs/09 G4 · 游客服务与评价（批次 5）
+# ==========================================================================
+class ServiceRequest(TimestampMixin, Base):
+    """游客服务工单：咨询 / 投诉建议 / 失物招领 / 紧急求助。"""
+
+    __tablename__ = "service_request"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    park_id: Mapped[str | None] = mapped_column(ForeignKey("park.id"), index=True, nullable=True)
+    visitor_ref: Mapped[str] = mapped_column(String(64), index=True, default="")
+    # consult 咨询 / complaint 投诉建议 / lost 失物招领 / help 紧急求助
+    category: Mapped[str] = mapped_column(String(16), index=True)
+    content: Mapped[str] = mapped_column(Text, default="")
+    contact: Mapped[str] = mapped_column(String(64), default="")
+    # 紧急求助必须优先于普通咨询，因此单独一列而不是从 category 推导
+    # （游客可能既是"投诉"又要求"加急"）。
+    urgent: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # open 待受理 / processing 处理中 / resolved 已回复 / closed 已关闭
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    reply: Mapped[str] = mapped_column(Text, default="")
+    handled_by: Mapped[str] = mapped_column(String(64), default="")
+    replied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Review(TimestampMixin, Base):
+    """评价：一单一评，可选择匿名。"""
+
+    __tablename__ = "review"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    park_id: Mapped[str] = mapped_column(ForeignKey("park.id"), index=True)
+    order_id: Mapped[str | None] = mapped_column(ForeignKey("ticket_order.id"), index=True, nullable=True)
+    visitor_ref: Mapped[str] = mapped_column(String(64), index=True, default="")
+    rating: Mapped[int] = mapped_column(Integer, default=5)  # 1..5
+    content: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    # 景区回复（工单19 §4 的"商家回复"）
+    reply: Mapped[str] = mapped_column(Text, default="")
+    replied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ==========================================================================
+# docs/09 G2 · 景区多媒体素材（批次 5 补齐，票务页与景区页共用）
+# ==========================================================================
+class ParkAsset(TimestampMixin, Base):
+    """景区多媒体素材：图片 / 视频 / 音频 / 文档。"""
+
+    __tablename__ = "park_asset"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    park_id: Mapped[str] = mapped_column(ForeignKey("park.id"), index=True)
+    modality: Mapped[str] = mapped_column(String(16), default="image", index=True)
+    uri: Mapped[str] = mapped_column(String(512), default="")
+    title: Mapped[str] = mapped_column(String(200), default="")
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+
+
+# ==========================================================================
+# docs/09 G5 · 游客提问埋点（批次 6）
+#
+# 为什么必须新增这张表：工单16 §2.1 第 4 条要求「通过数据分析工具精准洞察游客需求」，
+# 而在此之前**没有任何数据源**能回答"游客在问什么" —— audit_log 只记状态变更类请求，
+# 问答与检索不落库，因此「游客需求洞察」只能是一个空壳页面。
+# 这张表是让该能力真正可交付的最小代价。
+#
+# 隐私边界：只记录**问题文本与意图分类**，不记录回答内容、不记录 IP、不记录会话上下文。
+# 问题文本本身是游客主动输入的内容，属最小必要范围；回答里可能含知识库引文，
+# 落库既无助于洞察，又扩大了留存面。
+# ==========================================================================
+class QueryLog(TimestampMixin, Base):
+    """一次游客提问 / 检索的记录。写入失败绝不能影响问答本身。"""
+
+    __tablename__ = "query_log"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    # query 检索问答 / dialog 数字人对话
+    source: Mapped[str] = mapped_column(String(16), default="query", index=True)
+    session_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    question: Mapped[str] = mapped_column(Text, default="")
+    # 后端已有的意图分类（services/dialog.py 判定），不是前端猜测
+    intent: Mapped[str] = mapped_column(String(64), default="", index=True)
+    lang: Mapped[str] = mapped_column(String(16), default="zh")
+    # 是否给出了答案（检索无命中时应为 false，用于发现知识库盲区）
+    answered: Mapped[bool] = mapped_column(Boolean, default=True)
+    citations: Mapped[int] = mapped_column(Integer, default=0)
+    has_image: Mapped[bool] = mapped_column(Boolean, default=False)
+    has_audio: Mapped[bool] = mapped_column(Boolean, default=False)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)

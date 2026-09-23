@@ -132,6 +132,10 @@ class Settings(BaseSettings):
     avatar_id: str = "qingci"
     avatar_name: str = "青瓷"
     avatar_emotion: str = "calm"
+    # 视觉交互：连续稳定帧、同目标自动讲解冷却及知识库召回数量
+    avatar_stable_frames: int = 3
+    avatar_auto_explain_cooldown_seconds: float = 20.0
+    avatar_auto_explain_top_k: int = 3
     # viseme：输出视位序列由前端 Three.js 驱动（CPU 环境默认）
     # musetalk：调用 GPU 唇形服务生成视频
     lipsync_provider: str = "viseme"

@@ -228,7 +228,11 @@ class CreationService:
                 f"【照片数量】{image_count} 张\n"
                 f"【当日亮点】{'、'.join(highlights) or '未特别说明'}\n"
                 f"【照片配文】{' / '.join(captions) or '无'}\n"
-                "请写一篇旅行日记。" 
+                "请写一篇旅行日记。"
+                # 亮点是游客自己填的经历，日记必须**原样保留**这些短语；
+                # 只要求"体现"会被模型改写（"水榭点茶"→"在水榭处体验了点茶仪式"），
+                # 游客回看时找不到自己写的那件事。
+                "【当日亮点】里的每个短语都要在正文中逐字出现，不要改写、不要拆分。"
             )
             raw = get_llm().generate(prompt, system=DIARY_SYSTEM)
             check_text(raw)
@@ -245,6 +249,8 @@ class CreationService:
             body = self._fallback_diary(title, place, tone, image_count, picked or captions)
             picked = picked or captions
 
+        body = self._ensure_highlights(body, highlights)
+
         uri = store_bytes(body.encode("utf-8"), "text", "txt", content_type="text/plain; charset=utf-8")
         asset = self._persist_asset(
             kind="diary",
@@ -260,6 +266,19 @@ class CreationService:
         )
         asset["extra"]["highlights"] = picked
         return asset
+
+    @staticmethod
+    def _ensure_highlights(body: str, highlights: Sequence[str]) -> str:
+        """保证游客填写的亮点在正文里**字面可见**。
+
+        模型会把「水榭点茶」改写成「在水榭处享受了一次点茶」——语义没错，但游客回看
+        日记时找不到自己写下的那件事。云端模型对"逐字保留"这类格式约束并不稳定，
+        因此这里做确定性兜底：正文没写到的亮点，在结尾补一句"当日亮点"。
+        """
+        missing = [str(item).strip() for item in highlights if str(item).strip() and str(item).strip() not in body]
+        if not missing:
+            return body
+        return f"{body.rstrip()}（当日亮点：{'、'.join(missing)}。）"
 
     @staticmethod
     def _fallback_diary(title: str, place: str, tone: str, count: int, points: Sequence[str]) -> str:

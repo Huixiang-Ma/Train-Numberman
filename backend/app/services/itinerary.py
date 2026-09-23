@@ -35,7 +35,23 @@ SYSTEM_PROMPT = (
     '"stops": [{"name": "景点名", "start_time": "09:00", "duration": "1 小时", '
     '"kind": "sight|food|activity|rest|photo", "reason": "为什么安排在这里（结合兴趣）", '
     '"tips": "实用提示"}]}'
+    '注意：kind 必须从 sight / food / activity / rest / photo 中**只选一个**，'
+    "不要在字段里写竖线或多个取值。"
 )
+
+# 分站类型白名单：前端据此配色、排序与生成路线文案。
+# 云端模型常把提示词里的候选串照抄成 "sight|photo" 这类多值（提示词写的是
+# `sight|food|activity|rest|photo` 这样的枚举示意），落库后前端拿不到已知类型。
+_ALLOWED_STOP_KINDS = ("sight", "food", "activity", "rest", "photo")
+
+
+def normalize_stop_kind(value: object) -> str:
+    """把模型给出的分站类型收敛到白名单内的单值；识别不出时按参观处理。"""
+    text = str(value or "").strip().lower()
+    for candidate in _ALLOWED_STOP_KINDS:
+        if candidate in text:
+            return candidate
+    return "sight"
 
 # 时长档位 → 分站数上限（半日游安排过多站点在体验上是负分）
 DURATION_STOPS = {"半日": 4, "一日": 6, "两日": 10}
@@ -220,7 +236,7 @@ class ItineraryService:
                         "name": str(s.get("name") or "").strip()[:128],
                         "start_time": str(s.get("start_time") or "").strip()[:16],
                         "duration": str(s.get("duration") or "").strip()[:32],
-                        "kind": str(s.get("kind") or "sight").strip()[:16],
+                        "kind": normalize_stop_kind(s.get("kind")),
                         "reason": str(s.get("reason") or "").strip()[:200],
                         "tips": str(s.get("tips") or "").strip()[:200],
                     }

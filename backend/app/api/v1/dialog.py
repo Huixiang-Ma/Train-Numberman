@@ -6,19 +6,41 @@
 """
 from __future__ import annotations
 
+import time
 import uuid
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from ...schemas import ApiResponse, DialogRequest
+from ...services.analytics import record_query
 from ...services.dialog import DialogService
 from ...services.retrieval import RetrievalService
 
 router = APIRouter(tags=["dialog"])
 
 
+def _record(data: dict, *, source: str, question: str, has_image: bool, has_audio: bool, started: float) -> None:
+    """把一次对话落进提问埋点。
+
+    意图与引文数都取自**后端自己的判定结果**，不在前端猜；
+    `intent` 是 DialogService 的输出，正是「需求洞察」里意图分布的来源。
+    """
+    record_query(
+        source=source,
+        question=question or "",
+        intent=str(data.get("intent") or ""),
+        session_id=str(data.get("session_id") or ""),
+        lang=str(data.get("lang") or "zh"),
+        citations=len(data.get("citations") or []),
+        has_image=has_image,
+        has_audio=has_audio or bool(data.get("asr_text")),
+        latency_ms=int((time.perf_counter() - started) * 1000),
+    )
+
+
 @router.post("/dialog", response_model=ApiResponse)
 def dialog(payload: DialogRequest) -> ApiResponse:
+    started = time.perf_counter()
     data = DialogService().handle(
         session_id=payload.session_id,
         text=payload.text,
@@ -26,6 +48,7 @@ def dialog(payload: DialogRequest) -> ApiResponse:
         with_avatar=payload.with_avatar,
         with_perception=payload.with_perception,
     )
+    _record(data, source="dialog", question=payload.text or "", has_image=False, has_audio=False, started=started)
     return ApiResponse(data=data, trace_id=uuid.uuid4().hex)
 
 
@@ -46,6 +69,7 @@ async def dialog_multimodal(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    started = time.perf_counter()
     data = DialogService().handle(
         session_id=session_id,
         text=text,
@@ -55,5 +79,13 @@ async def dialog_multimodal(
         lang=lang,
         with_avatar=with_avatar,
         with_perception=with_perception,
+    )
+    _record(
+        data,
+        source="dialog",
+        question=text or "",
+        has_image=image_bytes is not None,
+        has_audio=audio is not None,
+        started=started,
     )
     return ApiResponse(data=data, trace_id=uuid.uuid4().hex)

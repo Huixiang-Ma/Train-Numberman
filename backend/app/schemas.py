@@ -327,3 +327,86 @@ class ShareData(BaseModel):
 class CreationListData(BaseModel):
     items: list[CreationAssetOut] = Field(default_factory=list)
     total: int = 0
+
+
+# ---------------- 票务（docs/09 G3 · 批次 5）----------------
+class OrderCreateRequest(BaseModel):
+    """下单入参。visitor_ref 由前端生成的匿名串充当"我是谁"（本项目无游客账号体系）。"""
+
+    park_id: str
+    ticket_type_id: str
+    slot_id: str
+    quantity: int = 1
+    visitor_ref: str = ""
+    contact_name: str = ""
+    contact_phone: str = ""
+
+
+class TicketCheckinRequest(BaseModel):
+    """核销入参：credential 可以是票号（人工输入）或二维码 token（扫码）。"""
+
+    credential: str
+    gate: str = ""
+
+
+class RefundRequest(BaseModel):
+    reason: str = ""
+
+
+class TicketTypeRequest(BaseModel):
+    park_id: str
+    name: str
+    category: str = "adult"
+    price_cents: int = 0
+    refundable: bool = True
+    valid_days: int = 1
+    notice: str = ""
+    # 建票种时顺带铺开未来若干天的时段（传 0 则只建票种、不铺时段）
+    total_days: int = 7
+    daily_inventory: int = 200
+
+
+class TicketTypePatch(BaseModel):
+    name: str | None = None
+    category: str | None = None
+    price_cents: int | None = None
+    refundable: bool | None = None
+    valid_days: int | None = None
+    notice: str | None = None
+    status: str | None = None
+
+
+class SlotPatch(BaseModel):
+    inventory: int
+
+
+# ---------------- 游客服务与评价（docs/09 G4 · 批次 5）----------------
+class ServiceRequestIn(BaseModel):
+    park_id: str | None = None
+    visitor_ref: str = ""
+    category: str = "consult"
+    content: str
+    contact: str = ""
+    urgent: bool = False
+
+
+class ServiceReplyIn(BaseModel):
+    reply: str
+    handled_by: str = ""
+
+
+class ServiceStatusIn(BaseModel):
+    status: str
+
+
+class ReviewIn(BaseModel):
+    park_id: str
+    order_id: str | None = None
+    visitor_ref: str = ""
+    rating: int = 5
+    content: str = ""
+    tags: list[str] = Field(default_factory=list)
+
+
+class ReviewReplyIn(BaseModel):
+    reply: str

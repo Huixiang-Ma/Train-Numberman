@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 工单18 · 全局基础样式（暖色体系） */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow-x: clip;
+  background:
+    radial-gradient(1100px 620px at 8% -10%, rgba(232, 192, 106, 0.22), transparent 62%),
+    radial-gradient(900px 520px at 100% 0%, rgba(180, 83, 47, 0.1), transparent 58%),
+    #fbf3e7;
+  color: #33251a;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* 数字人说话声波：由 CSS 关键帧驱动，避免依赖重渲染 */
+@keyframes wenlv-wave {
+  0%,
+  100% {
+    transform: scaleY(0.18);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.wave-bar {
+  height: 20px;
+  transform-origin: bottom center;
+  animation: wenlv-wave 620ms ease-in-out infinite;
+  will-change: transform;
+}
+
+.wave-bar--idle {
+  animation: none;
+  transform: scaleY(0.12);
+  opacity: 0.24;
+}
+
+/* ============================================================
+   工单20 · 多端适配（docs/06 §4.1：Web / App / 小程序 / 景区自助终端）
+
+   本项目以 Web 为实现形态，而 App（H5 + Capacitor）与小程序（Taro 的 H5 预览）
+   都以同一套 H5 为基座，因此这里按移动端 H5 的通用约束统一处理；
+   自助终端（大屏触控）则做限宽以免元素被拉开。四条规则各有明确目的：
+   ============================================================ */
+:root {
+  --wenlv-safe-top: env(safe-area-inset-top, 0px);
+  --wenlv-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --wenlv-safe-left: env(safe-area-inset-left, 0px);
+  --wenlv-safe-right: env(safe-area-inset-right, 0px);
+}
+
+html {
+  /* 阻止 iOS 横屏时自动放大字号，避免排版错乱 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  /* 移动端点击不出现灰色高亮块（否则每次点按钮都闪一下） */
+  -webkit-tap-highlight-color: transparent;
+  /* 纵向滚动到边界时不把整页一起带走（贴合原生 App 手感） */
+  overscroll-behavior-y: contain;
+  /* 刘海屏 / 手势条安全区留白 */
+  padding-left: var(--wenlv-safe-left);
+  padding-right: var(--wenlv-safe-right);
+}
+
+/* 触摸设备：把可点元素撑到接近 iOS HIG 建议的触控尺寸 */
+@media (hover: none) and (pointer: coarse) {
+  button,
+  a {
+    min-height: 34px;
+  }
+}
+
+/* 横向滚动容器：移动端排不下的标签组改为可滑动，而不是换行挤成三行 */
+.scroll-x {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.scroll-x::-webkit-scrollbar {
+  display: none;
+}
+.scroll-x > * {
+  flex: none;
+}
+
+/* 景区自助终端（大屏触控）：内容居中限宽，避免超宽屏上卡片被拉散 */
+@media (min-width: 1600px) {
+  .terminal-wrap {
+    max-width: 1500px;
+    margin-inline: auto;
+  }
+}

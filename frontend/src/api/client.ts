@@ -91,6 +91,37 @@ export interface Suggestion {
   confidence: number
 }
 
+/**
+ * 数字人交互事件（工单18 · /ws/perception 的 interaction 字段）。
+ *
+ * 与 Suggestion 的区别：Suggestion 只描述"检测到什么手势、建议做什么"，
+ * interaction 则是**已决定要执行**的一次数字人反馈——它自带动作用、表情、
+ * 语音驱动与可播报文本，前端据此驱动数字人，不再自行解释识别结果。
+ */
+export type AvatarInteractionKind =
+  | 'greeting'
+  | 'explanation'
+  | 'guidance'
+  | 'clarification'
+  | 'answer'
+  | 'encouragement'
+  | 'recommendation'
+
+export interface AvatarInteraction {
+  kind: AvatarInteractionKind
+  /** 数字人要说的那句话；自动讲解由后端保证带"资料来源：" */
+  text: string
+  /** 识别目标标签（挥手类事件为 null） */
+  target: string | null
+  confidence: number
+  motion: string
+  emotion: string
+  /** 触发手势名（无手势事件为 null） */
+  gesture: string | null
+  /** 语音与视位驱动；驱动不可用时为 null，界面仍保留文字反馈 */
+  drive: AvatarDrive | null
+}
+
 export interface DialogResult {
   session_id: string
   intent: string
@@ -291,6 +322,184 @@ export const api = {
 
   // ---------------- 工单20 场景12 · 活动回顾 PPT（批次 4 内容生产） ----------------
   createPpt: (form: FormData) => request<CreationAsset>('/create/ppt', { method: 'POST', body: form }),
+
+  // ---------------- docs/09 G3 · 票务（批次 5） ----------------
+  parkTickets: (parkId: string, days = 7) => request<ParkTickets>(`/ticket/park/${parkId}?days=${days}`),
+  ticketSlots: (ticketTypeId: string, days = 14) =>
+    request<{ items: TicketSlot[]; total: number }>(`/ticket/slots/${ticketTypeId}?days=${days}`),
+  /** 深链还原：由时段 id 反查景区 / 票种 / 时段 */
+  slotContext: (slotId: string) => request<SlotContext>(`/ticket/slot/${slotId}`),
+  createOrder: (payload: {
+    park_id: string
+    ticket_type_id: string
+    slot_id: string
+    quantity: number
+    visitor_ref: string
+    contact_name?: string
+    contact_phone?: string
+  }) =>
+    request<TicketOrder>('/ticket/order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  myOrders: (visitorRef: string) =>
+    request<{ items: TicketOrder[]; total: number }>(`/ticket/orders?visitor_ref=${encodeURIComponent(visitorRef)}`),
+  getOrder: (orderId: string) => request<TicketOrder>(`/ticket/order/${orderId}`),
+  /** 支付占位：推进状态并签发电子票，**不产生资金动作**（docs/09 §3.2 边界） */
+  payOrder: (orderId: string) => request<TicketOrder>(`/ticket/order/${orderId}/pay`, { method: 'POST' }),
+  cancelOrder: (orderId: string) => request<TicketOrder>(`/ticket/order/${orderId}/cancel`, { method: 'POST' }),
+  refundOrder: (orderId: string, reason = '') =>
+    request<TicketOrder>(`/ticket/order/${orderId}/refund`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    }),
+
+  // ---------------- docs/09 G3 · 票务（闸口侧，需运营及以上）----------------
+  checkin: (credential: string, gate = '') =>
+    request<CheckinResult>('/ticket/checkin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential, gate }),
+    }),
+  adminOrders: (params: { park_id?: string; status?: string; keyword?: string; limit?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (params.park_id) query.set('park_id', params.park_id)
+    if (params.status) query.set('status', params.status)
+    if (params.keyword) query.set('keyword', params.keyword)
+    if (params.limit) query.set('limit', String(params.limit))
+    const suffix = query.toString()
+    return request<{ items: TicketOrder[]; total: number }>(`/ticket/admin/orders${suffix ? `?${suffix}` : ''}`)
+  },
+  ticketStats: (parkId?: string) =>
+    request<TicketStats>(`/ticket/admin/stats${parkId ? `?park_id=${encodeURIComponent(parkId)}` : ''}`),
+  createTicketType: (payload: {
+    park_id: string
+    name: string
+    category?: string
+    price_cents: number
+    refundable?: boolean
+    valid_days?: number
+    notice?: string
+    total_days?: number
+    daily_inventory?: number
+  }) =>
+    request<TicketType>('/ticket/admin/types', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  updateTicketType: (ticketTypeId: string, patch: Partial<TicketType>) =>
+    request<TicketType>(`/ticket/admin/types/${ticketTypeId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }),
+  updateSlot: (slotId: string, inventory: number) =>
+    request<TicketSlot>(`/ticket/admin/slots/${slotId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inventory }),
+    }),
+  /** 电子票二维码图片地址（后端按需生成 PNG，同源，<img src> 直接可用） */
+  ticketQrUrl: (ticketId: string) => `${BASE}/ticket/qr/${ticketId}`,
+
+  // ---------------- docs/09 G4 · 游客服务与评价（批次 5） ----------------
+  createServiceRequest: (payload: {
+    park_id?: string | null
+    visitor_ref: string
+    category: string
+    content: string
+    contact?: string
+    urgent?: boolean
+  }) =>
+    request<ServiceRequestItem>('/service/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  myServiceRequests: (visitorRef: string) =>
+    request<{ items: ServiceRequestItem[]; total: number }>(
+      `/service/my?visitor_ref=${encodeURIComponent(visitorRef)}`,
+    ),
+  adminServiceRequests: (params: { park_id?: string; status?: string; category?: string } = {}) => {
+    const query = new URLSearchParams()
+    if (params.park_id) query.set('park_id', params.park_id)
+    if (params.status) query.set('status', params.status)
+    if (params.category) query.set('category', params.category)
+    const suffix = query.toString()
+    return request<{ items: ServiceRequestItem[]; total: number }>(`/service/admin/requests${suffix ? `?${suffix}` : ''}`)
+  },
+  serviceStats: (parkId?: string) =>
+    request<ServiceStats>(`/service/admin/stats${parkId ? `?park_id=${encodeURIComponent(parkId)}` : ''}`),
+  replyServiceRequest: (requestId: string, reply: string, handledBy = '') =>
+    request<ServiceRequestItem>(`/service/admin/requests/${requestId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reply, handled_by: handledBy }),
+    }),
+  setServiceStatus: (requestId: string, status: string) =>
+    request<ServiceRequestItem>(`/service/admin/requests/${requestId}/status`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    }),
+
+  createReview: (payload: {
+    park_id: string
+    order_id?: string | null
+    visitor_ref: string
+    rating: number
+    content?: string
+    tags?: string[]
+  }) =>
+    request<ReviewItem>('/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  parkReviews: (parkId: string, limit = 50) =>
+    request<{ items: ReviewItem[]; total: number; summary: ReviewSummary }>(
+      `/review/park/${parkId}?limit=${limit}`,
+    ),
+  reviewSummary: (parkId?: string) =>
+    request<ReviewSummary>(`/review/summary${parkId ? `?park_id=${encodeURIComponent(parkId)}` : ''}`),
+  adminReviews: (params: { park_id?: string; limit?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (params.park_id) query.set('park_id', params.park_id)
+    if (params.limit) query.set('limit', String(params.limit))
+    const suffix = query.toString()
+    return request<{ items: ReviewItem[]; total: number }>(`/review/admin/list${suffix ? `?${suffix}` : ''}`)
+  },
+  replyReview: (reviewId: string, reply: string) =>
+    request<ReviewItem>(`/review/admin/${reviewId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reply }),
+    }),
+
+  // ---------------- docs/09 G5 · 数据分析与需求洞察（批次 6，需运营及以上）----------------
+  analyticsBusiness: (parkId?: string, days = 30) => {
+    const query = new URLSearchParams({ days: String(days) })
+    if (parkId) query.set('park_id', parkId)
+    return request<BusinessOverview>(`/analytics/business?${query.toString()}`)
+  },
+  analyticsParks: (days = 30) =>
+    request<{ items: ParkComparison[]; total: number }>(`/analytics/parks?days=${days}`),
+  analyticsInsight: (days = 30) => request<InsightData>(`/analytics/insight?days=${days}`),
+  analyticsDatasets: () => request<{ items: DatasetInfo[]; total: number }>('/analytics/datasets'),
+  analyticsDataset: (name: string, limit = 200) =>
+    request<DatasetData>(`/analytics/dataset/${name}?limit=${limit}`),
+
+  // ---------------- 工单16 §2.2 · 运营助理（快捷指令 S9）----------------
+  /** 复用数字人对话作为"运营助理"：同一套知识检索与驱动，只是换了使用场景 */
+  assistant: (text: string, sessionId?: string) =>
+    request<DialogResult>('/dialog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, text, with_avatar: false, with_perception: false }),
+    }),
 }
 
 // ========================= 阶段四（工单19）类型 =========================
@@ -531,6 +740,305 @@ export const httpTone = (status: number | null): 'ok' | 'warn' | 'down' | 'idle'
   if (status < 300) return 'ok'
   if (status < 400) return 'warn'
   return 'down'
+}
+
+// ============ 批次 5 · 票务与游客服务（docs/09 G3/G4） ============
+
+export interface TicketType {
+  id: string
+  park_id: string
+  name: string
+  /** adult 成人 / student 学生 / senior 老人 / family 亲子 / combo 联票 */
+  category: string
+  price_cents: number
+  price: number
+  currency: string
+  refundable: boolean
+  valid_days: number
+  notice: string
+  /** on_sale 在售 / off_shelf 下架 */
+  status: string
+}
+
+export interface TicketSlot {
+  id: string
+  ticket_type_id: string
+  slot_date: string
+  start_time: string
+  end_time: string
+  inventory: number
+  sold: number
+  remaining: number
+  sold_out: boolean
+}
+
+export interface ParkTickets {
+  park: { id: string; name: string; level: string; ticket_notice: string }
+  ticket_types: (TicketType & { slots: TicketSlot[] })[]
+  days: number
+}
+
+export interface SlotContext {
+  park: { id: string; name: string; level: string } | null
+  ticket_type: TicketType
+  slot: TicketSlot
+}
+
+export interface DigitalTicketItem {
+  id: string
+  code: string
+  qr_payload: string
+  /** valid 有效 / checked_in 已核销 / expired 已过期 / refunded 已退票 */
+  status: string
+  status_label: string
+  gate: string
+  checked_in_at: string | null
+}
+
+export interface TicketOrder {
+  id: string
+  order_no: string
+  visitor_ref: string
+  park_id: string
+  park_name: string
+  ticket_type_id: string
+  ticket_type_name: string
+  ticket_category: string
+  slot_id: string
+  slot_date: string | null
+  slot_start: string
+  slot_end: string
+  quantity: number
+  amount_cents: number
+  amount: number
+  contact_name: string
+  /** 后端已脱敏（138****34） */
+  contact_phone: string
+  /** pending 待支付 / paid 待使用 / checked_in 已核销 / refunded 已退款 / cancelled 已取消 */
+  status: string
+  status_label: string
+  payment_ref: string
+  booked_at: string | null
+  paid_at: string | null
+  checked_in_at: string | null
+  refunded_at: string | null
+  cancel_reason: string
+  tickets: DigitalTicketItem[]
+}
+
+export interface CheckinResult {
+  code: string
+  status: string
+  checked_in_at: string
+  gate: string
+  order_no: string
+  order_status: string
+  order_status_label: string
+  /** 同一订单内还有几张未核销；多人同行时闸口人员据此判断是否放全队 */
+  remaining_in_order: number
+}
+
+export interface TicketStats {
+  orders_total: number
+  orders_pending: number
+  orders_paid: number
+  orders_checked_in: number
+  orders_refunded: number
+  tickets_sold: number
+  tickets_checked_in: number
+  amount_cents: number
+  /** 分母为已成交订单数，不含待支付 */
+  checkin_rate: number
+}
+
+export interface ServiceRequestItem {
+  id: string
+  park_id: string | null
+  visitor_ref: string
+  category: string
+  category_label: string
+  content: string
+  contact: string
+  urgent: boolean
+  /** open 待受理 / processing 处理中 / resolved 已回复 / closed 已关闭 */
+  status: string
+  status_label: string
+  reply: string
+  handled_by: string
+  created_at: string | null
+  replied_at: string | null
+}
+
+export interface ServiceStats {
+  total: number
+  open: number
+  urgent_open: number
+  resolved: number
+  by_category: Record<string, number>
+  resolve_rate: number
+  avg_response_minutes: number | null
+}
+
+export interface ReviewItem {
+  id: string
+  park_id: string
+  order_id: string | null
+  visitor_ref: string
+  rating: number
+  content: string
+  tags: string[]
+  reply: string
+  created_at: string | null
+  replied_at: string | null
+}
+
+export interface ReviewSummary {
+  total: number
+  average: number
+  /** 键为 "5".."1"，值为条数 */
+  distribution: Record<string, number>
+}
+
+/** 订单状态 → 语义色（游客端与管理端共用一套口径） */
+export const ORDER_TONE: Record<string, 'ok' | 'warn' | 'down' | 'idle'> = {
+  pending: 'warn',
+  paid: 'ok',
+  checked_in: 'ok',
+  refunding: 'warn',
+  refunded: 'idle',
+  cancelled: 'idle',
+}
+
+/** 电子票状态 → 语义色 */
+export const TICKET_TONE: Record<string, 'ok' | 'warn' | 'down' | 'idle'> = {
+  valid: 'ok',
+  checked_in: 'idle',
+  expired: 'idle',
+  refunded: 'idle',
+}
+
+/** 服务工单状态 → 语义色 */
+export const SERVICE_TONE: Record<string, 'ok' | 'warn' | 'down' | 'idle'> = {
+  open: 'warn',
+  processing: 'warn',
+  resolved: 'ok',
+  closed: 'idle',
+}
+
+/** 服务类型 → 中文与语义色 */
+export const SERVICE_CATEGORY: Record<string, { label: string; tone: 'ok' | 'warn' | 'down' | 'idle' }> = {
+  consult: { label: '咨询', tone: 'idle' },
+  complaint: { label: '投诉建议', tone: 'warn' },
+  lost: { label: '失物招领', tone: 'warn' },
+  help: { label: '紧急求助', tone: 'down' },
+}
+
+/** 票种类别 → 中文 */
+export const TICKET_CATEGORY: Record<string, string> = {
+  adult: '成人',
+  student: '学生',
+  senior: '老人',
+  family: '亲子',
+  combo: '联票',
+}
+
+/** 分 → 元，保留两位（票面金额一律走这里，避免各处 toFixed 口径不一） */
+export const yuan = (cents: number): string => `¥${(cents / 100).toFixed(2)}`
+
+// ============ 批次 6 · 数据分析与需求洞察（docs/09 G5） ============
+
+/** 缺失数据源的说明项。页面必须原样展示，不能留白。 */
+export interface GapItem {
+  item: string
+  reason: string
+}
+
+export interface BusinessOverview {
+  park_id: string | null
+  days: number
+  ticket: TicketStats
+  ticket_structure: { name: string; category: string; quantity: number; amount_cents: number; share: number }[]
+  /** 电子票核销时间的小时分布，是入园时段的**代理指标**而非真实客流 */
+  checkin_hours: { hour: number | null; count: number }[]
+  order_trend: { date: string; orders: number; tickets: number }[]
+  content: {
+    by_kind: { kind: string; count: number }[]
+    total: number
+    share_links: number
+    share_visits: number
+  }
+  review: ReviewSummary
+  service: ServiceStats
+  gaps: GapItem[]
+}
+
+export interface ParkComparison {
+  park_id: string
+  park_name: string
+  level: string
+  status: string
+  daily_capacity: number
+  ticket_types: number
+  orders: number
+  orders_pending: number
+  tickets: number
+  amount_cents: number
+  orders_checked_in: number
+  checkin_rate: number
+  reviews: number
+  rating: number | null
+  service_open: number
+}
+
+export interface InsightData {
+  days: number
+  total: number
+  recent: number
+  multimodal: number
+  multimodal_ratio: number
+  avg_latency_ms: number | null
+  intents: { intent: string; label: string; count: number; share: number }[]
+  sources: { source: string; count: number }[]
+  trend: { date: string; count: number }[]
+  hot_words: { word: string; count: number }[]
+  /** 热点算法口径，随数据返回，页面需如实标注 */
+  hot_word_method: string
+  park_mentions: { park_name: string; count: number }[]
+  park_mention_method: string
+  blind_spots: { question: string; intent: string; created_at: string | null }[]
+  recent_questions: {
+    question: string
+    intent: string
+    intent_label: string
+    citations: number
+    source: string
+    has_image: boolean
+    has_audio: boolean
+    created_at: string | null
+  }[]
+  gaps: GapItem[]
+}
+
+export interface DatasetInfo {
+  name: string
+  label: string
+}
+
+export interface DatasetData {
+  name: string
+  label: string
+  columns: string[]
+  rows: (string | number)[][]
+}
+
+/** 把数据集导出为 CSV。加 BOM 以便 Excel 正确识别 UTF-8 中文。 */
+export const datasetToCsv = (data: DatasetData): string => {
+  const escape = (value: string | number) => {
+    const text = String(value ?? '')
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+  }
+  const lines = [data.columns.map(escape).join(','), ...data.rows.map((row) => row.map(escape).join(','))]
+  return `\ufeff${lines.join('\n')}`
 }
 
 

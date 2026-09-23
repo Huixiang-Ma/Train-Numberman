@@ -1,0 +1,104 @@
+[
+  {
+    "scene": "1",
+    "title": "拍古建筑→识别+讲历史与建筑风格",
+    "verdict": "pass",
+    "note": "检测 0 / 分类 5 目标，讲解 359 字，1751ms"
+  },
+  {
+    "scene": "2",
+    "title": "语音问必打卡→语音答复+推荐路线",
+    "verdict": "degraded",
+    "note": "ASR 空（合成音频，预期），数字人驱动 有，132708ms"
+  },
+  {
+    "scene": "3",
+    "title": "上传碑刻→OCR 识碑文+讲文化内涵",
+    "verdict": "degraded",
+    "note": "OCR 未命中（合成图无声碑文，预期），1924ms"
+  },
+  {
+    "scene": "4",
+    "title": "景区内挥手→数字人问候+推荐附近活动",
+    "verdict": "pass",
+    "note": "问候语 22 字，推荐 3 项，2532ms"
+  },
+  {
+    "scene": "5",
+    "title": "兴趣→摄影线路+拍照点",
+    "verdict": "pass",
+    "note": "4 个站点，110361ms"
+  },
+  {
+    "scene": "6",
+    "title": "上传合影→风格化纪念照+明信片",
+    "verdict": "blocked",
+    "note": "图像生成 503 纪念图片生成服务额度不足，请稍后重试或联系管理员"
+  },
+  {
+    "scene": "7",
+    "title": "上传短视频→分析内容+配音讲解",
+    "verdict": "skip",
+    "note": "需真实短视频样本；且工单20 场景7 的「逐帧分析后自动配解说」是本项目已登记的缺口①"
+  },
+  {
+    "scene": "8",
+    "title": "语音问「这雕像是谁」+照片→识别+讲人物故事",
+    "verdict": "pass",
+    "note": "检测 0 个目标，41799ms"
+  },
+  {
+    "scene": "9",
+    "title": "上传动植物照片→识别物种+讲生态知识",
+    "verdict": "pass",
+    "note": "分类 5 项，2093ms"
+  },
+  {
+    "scene": "10",
+    "title": "生成旅行日记→相册/短片+解说词+音乐",
+    "verdict": "pass",
+    "note": "解说词 186 字，32641ms（配乐属已登记缺口③）"
+  },
+  {
+    "scene": "11",
+    "title": "语音问附近美食→定位检索+美食攻略",
+    "verdict": "pass",
+    "note": "命中 5 项，geo=有，1357ms"
+  },
+  {
+    "scene": "12",
+    "title": "上传活动照片→活动回顾 PPT+流程图",
+    "verdict": "pass",
+    "note": "PPT application/vnd.openxmlformats-officedocument.presentationml.presentation，活动「碑拓手作体验」流程 6 步，1690ms"
+  },
+  {
+    "scene": "13",
+    "title": "生成导览地图→个性化地图可下载打印",
+    "verdict": "pass",
+    "note": "2 站，产物 4575f17ad40e4876b233567289a11ac5，1372ms"
+  },
+  {
+    "scene": "14",
+    "title": "语音问壁画讲什么故事+图片→识别+讲解",
+    "verdict": "degraded",
+    "note": "ASR 空（合成音频，预期），143575ms"
+  },
+  {
+    "scene": "15",
+    "title": "表情识别→调整讲解风格",
+    "verdict": "degraded",
+    "note": "表情 未命中（合成图无人脸，预期）；风格切换属已登记缺口②，1783ms"
+  },
+  {
+    "scene": "16",
+    "title": "多张照片→旅行主题短视频+配乐",
+    "verdict": "pass",
+    "note": "产物 f42484d19eb8465d95988643ce821d49，24913ms"
+  },
+  {
+    "scene": "17",
+    "title": "语音问适合老人的休闲路线→适老化方案",
+    "verdict": "degraded",
+    "note": "4 个站点（适老化画像属已登记缺口④，108353ms）"
+  }
+]

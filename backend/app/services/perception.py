@@ -117,6 +117,20 @@ class PerceptionService:
                 return dict(plan, gesture=gesture.name, confidence=round(float(gesture.score), 3))
         return None
 
+    @staticmethod
+    def semantic_summary(result: PerceptionResult) -> dict[str, Any]:
+        """提取给交互层使用的轻量语义摘要，不改变逐项感知结果。"""
+        detection = max(result.detections, key=lambda item: item.score, default=None)
+        gesture = next(
+            (item for item in result.gestures if item.name in GESTURE_ACTIONS),
+            None,
+        )
+        return {
+            "target": detection.label if detection else None,
+            "confidence": round(float(detection.score), 3) if detection else 0.0,
+            "gesture": gesture.name if gesture else None,
+        }
+
     # ---------------- 序列化 ----------------
     @staticmethod
     def to_payload(result: PerceptionResult) -> dict[str, Any]:
@@ -152,4 +166,5 @@ class PerceptionService:
                 if result.expression
                 else None
             ),
+            "semantic": PerceptionService.semantic_summary(result),
         }

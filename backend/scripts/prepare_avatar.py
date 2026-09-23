@@ -68,8 +68,47 @@ def newest_source() -> Path:
 # ==========================================================================
 # 去背景
 # ==========================================================================
+def _sam_prompt(source: Path, width: int, height: int) -> tuple[list[list[int]], list[int]]:
+    """生成 SAM 提示点：优先按人物框自适应，检不出人物时退回固定构图。
+
+    固定提示点是按**半身像**构图写的（头顶在画面上部、躯干占满中部）。全身立绘里
+    人物明显更小、更居中，同一组点会大量落到背景上，SAM 于是返回空掩码
+    （"未返回掩码，请检查提示点或更换素材"）。这里直接用项目已有的 YOLO 检测器
+    取人物框，再在框内按躯干比例放正点。
+    """
+    from app.providers.registry import get_detector
+
+    points: list[tuple[float, float]] = list(SAM_POSITIVE)
+    labels: list[int] = [1] * len(SAM_POSITIVE)
+    try:
+        detections = get_detector().detect(source.read_bytes(), track=False)
+    except Exception as exc:  # 检测器不可用不应阻断抠图，退回固定提示点
+        print(f"[cutout] YOLO 提示点生成失败（{type(exc).__name__}），改用固定提示点")
+        detections = []
+
+    people = [item for item in detections if item.label in {"person", "游客"}]
+    if people:
+        best = max(people, key=lambda item: item.score * item.box[2] * item.box[3])
+        x, y, w, h = best.box
+        points = [
+            (x + w * 0.5, y + h * 0.16),  # 头/颈
+            (x + w * 0.5, y + h * 0.45),  # 胸腹
+            (x + w * 0.5, y + h * 0.78),  # 裙摆
+            (x + w * 0.18, y + h * 0.40),  # 左袖
+            (x + w * 0.82, y + h * 0.40),  # 右袖
+        ]
+        labels = [1] * len(points)
+        print(f"[cutout] 按人物框生成提示点（置信度 {best.score:.2f}，框 {w:.2f}×{h:.2f}）")
+    else:
+        print("[cutout] 未检出人物，沿用固定提示点")
+
+    points += list(SAM_NEGATIVE)
+    labels += [0] * len(SAM_NEGATIVE)
+    return [[round(px * width), round(py * height)] for px, py in points], labels
+
+
 def cutout_by_sam(source: Path, target: Path) -> None:
-    """SAM 2 多点提示分割：正点落在头/胸/袍/双袖，负点落在四角与两侧背景。"""
+    """SAM 2 多提示分割：正点落在人物躯干/头/裙摆，负点落在四角与两侧背景。"""
     import numpy as np
     from scipy import ndimage
     from ultralytics import SAM
@@ -80,12 +119,13 @@ def cutout_by_sam(source: Path, target: Path) -> None:
 
     with Image.open(source) as handle:
         width, height = handle.size
+        # ultralytics 走文件路径时对中文目录不友好，统一用内存数组送入
+        frame = np.asarray(handle.convert("RGB"))
 
-    points = [[round(x * width), round(y * height)] for x, y in SAM_POSITIVE + SAM_NEGATIVE]
-    labels = [1] * len(SAM_POSITIVE) + [0] * len(SAM_NEGATIVE)
+    points, labels = _sam_prompt(source, width, height)
 
     model = SAM(str(weight))
-    result = model(str(source), points=[points], labels=[labels], verbose=False)
+    result = model(frame, points=[points], labels=[labels], verbose=False)
     masks = result[0].masks
     if masks is None or len(masks.data) == 0:
         raise SystemExit("SAM 2 未返回掩码，请检查提示点或更换素材")
@@ -202,6 +242,12 @@ def cutout(source: Path, target: Path, method: str = "keying") -> None:
 # 关键点定位
 # ==========================================================================
 def _face_landmarks(image_path: Path):
+    """返回 (全图归一化关键点列表, 原图尺寸)。
+
+    单张全身立绘里人脸只占画面高的一小部分：MediaPipe 会把任何输入缩放到固定尺寸，
+    因此"把整图放大再检测"没有任何帮助（脸的有效像素数不变），必须**裁剪头部区域**后
+    再检测，并把裁剪图内的相对坐标映射回全图。半身像走原图一次即可命中，行为不变。
+    """
     import numpy as np
     import mediapipe
     from mediapipe.tasks import python as mp_python
@@ -221,11 +267,36 @@ def _face_landmarks(image_path: Path):
     landmarker = vision.FaceLandmarker.create_from_options(options)
 
     image = Image.open(image_path).convert("RGB")
-    mp_image = mediapipe.Image(image_format=mediapipe.ImageFormat.SRGB, data=np.array(image))
-    result = landmarker.detect(mp_image)
-    if not result.face_landmarks:
-        raise SystemExit("未在人像中检测到人脸，请换一张正脸清晰的形象图")
-    return result.face_landmarks[0], image.size
+    width, height = image.size
+
+    # 裁剪候选：全图 → 上 45%（含头肩）→ 上 30% 中间 70% 宽 → 上 22% 中间 45% 宽
+    crops = [
+        (0.0, 0.0, 1.0, 1.0),
+        (0.0, 0.0, 1.0, 0.45),
+        (0.15, 0.0, 0.70, 0.30),
+        (0.275, 0.0, 0.45, 0.22),
+    ]
+    for left, top, crop_w, crop_h in crops:
+        box_px = (
+            int(left * width),
+            int(top * height),
+            int((left + crop_w) * width),
+            int((top + crop_h) * height),
+        )
+        patch = image.crop(box_px)
+        if patch.width < 64 or patch.height < 64:
+            continue
+        mp_image = mediapipe.Image(image_format=mediapipe.ImageFormat.SRGB, data=np.array(patch))
+        result = landmarker.detect(mp_image)
+        if not result.face_landmarks:
+            continue
+        origin_x, origin_y = box_px[0] / width, box_px[1] / height
+        span_x, span_y = (box_px[2] - box_px[0]) / width, (box_px[3] - box_px[1]) / height
+        return (
+            [(origin_x + float(item.x) * span_x, origin_y + float(item.y) * span_y) for item in result.face_landmarks[0]],
+            (width, height),
+        )
+    raise SystemExit("未在人像中检测到人脸，请换一张正脸清晰的形象图")
 
 
 def _hand_landmarks(image_path: Path):
@@ -248,8 +319,17 @@ def _hand_landmarks(image_path: Path):
     landmarker = vision.HandLandmarker.create_from_options(options)
 
     image = Image.open(image_path).convert("RGB")
-    mp_image = mediapipe.Image(image_format=mediapipe.ImageFormat.SRGB, data=np.array(image))
-    result = landmarker.detect(mp_image)
+    # 与面部同理：全身立绘里的手只有几十像素，原尺寸常常检不出，放大后重试。
+    # 归一化坐标与输入尺寸无关，放大不影响结果口径。
+    result = None
+    for scale in (1, 2, 3):
+        candidate = image if scale == 1 else image.resize((image.width * scale, image.height * scale), Image.LANCZOS)
+        mp_image = mediapipe.Image(image_format=mediapipe.ImageFormat.SRGB, data=np.array(candidate))
+        result = landmarker.detect(mp_image)
+        if result.hand_landmarks:
+            break
+    if result is None:
+        return []
 
     hands = []
     for index, points in enumerate(result.hand_landmarks):
@@ -276,7 +356,7 @@ def detect_regions(image_path: Path) -> dict:
 
     def at(index: int) -> tuple[float, float]:
         item = points[index]
-        return float(item.x), float(item.y)
+        return float(item[0]), float(item[1])
 
     def box(indices: tuple[int, ...]) -> dict:
         xs = [at(i)[0] for i in indices]

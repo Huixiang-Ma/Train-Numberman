@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -22,6 +23,8 @@ from .generation import GenerationService
 from .perception import PerceptionService
 from .retrieval import RetrievalService
 from .session import SessionService
+
+logger = logging.getLogger(__name__)
 
 INTENT_RULES: list[tuple[str, list[str]]] = [
     ("互动", ["你好", "挥手", "打招呼", "点赞", "hello", "hi", "比心"]),
@@ -45,6 +48,9 @@ class DialogState(TypedDict, total=False):
     with_perception: bool
     session_turns: int
     asr_text: str
+    # 语音转写失败时的原因（空串表示正常）。与 avatar.degraded 同一套约定：
+    # 上游不可用要**降级并如实说明**，而不是让整个对话失败。
+    asr_degraded: str
     question: str
     perception: dict[str, Any] | None
     intent: str
@@ -60,9 +66,18 @@ class DialogState(TypedDict, total=False):
 def normalize_node(state: DialogState) -> DialogState:
     """语音转文本 + 图像环境感知 + 组合问题。"""
     asr_text = ""
+    asr_degraded = ""
     audio = state.get("audio")
     if audio:
-        asr_text = get_asr().transcribe(audio, mime=state.get("audio_mime") or "audio/wav")
+        try:
+            asr_text = get_asr().transcribe(audio, mime=state.get("audio_mime") or "audio/wav")
+        except Exception as exc:
+            # 上游 ASR 不可用（额度耗尽、网络异常、服务故障）时**必须降级而不是抛出**。
+            # 原先这条链会把 402/超时直接变成整个 /dialog/multimodal 的 500，
+            # 于是"图片识别 + 文本问答"这些完全正常的部分也一起不可用 ——
+            # 而同一份代码里 TTS 失败已经做了降级，两处行为不一致本身就是缺陷。
+            logger.warning("语音转写失败，降级为纯文本对话：%s", exc)
+            asr_degraded = _degrade_reason(exc)
 
     perception_payload: dict[str, Any] | None = None
     image = state.get("image")
@@ -73,7 +88,28 @@ def normalize_node(state: DialogState) -> DialogState:
         perception_payload["suggestion"] = service.suggest(result)
 
     question = " ".join(part for part in [state.get("text"), asr_text] if part).strip()
-    return {"asr_text": asr_text, "question": question, "perception": perception_payload}
+    return {
+        "asr_text": asr_text,
+        "asr_degraded": asr_degraded,
+        "question": question,
+        "perception": perception_payload,
+    }
+
+
+def _degrade_reason(exc: Exception) -> str:
+    """把上游异常翻成运营与游客都能看懂的一句话。
+
+    不直接透出原始异常：`Client error '402 Payment Required' for url ...`
+    对游客没有意义，而"语音识别服务额度不足"才是可行动的信息。
+    """
+    text = str(exc)
+    if "402" in text or "Payment Required" in text:
+        return "语音识别服务额度不足，本次已按文字对话处理"
+    if "401" in text or "403" in text:
+        return "语音识别服务鉴权失败，本次已按文字对话处理"
+    if "timeout" in text.lower() or "timed out" in text.lower():
+        return "语音识别服务响应超时，本次已按文字对话处理"
+    return "语音识别服务暂时不可用，本次已按文字对话处理"
 
 
 def route_node(state: DialogState) -> DialogState:
@@ -225,6 +261,8 @@ class DialogService:
             ],
             "ocr_text": state.get("ocr_text") or None,
             "asr_text": state.get("asr_text") or None,
+            # 前端据此提示"这次没听到语音"，否则游客会以为自己的语音被忽略了
+            "asr_degraded": state.get("asr_degraded") or None,
             "perception": state.get("perception"),
             "avatar": state.get("avatar"),
             "session_turns": state.get("session_turns", 0),

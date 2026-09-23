@@ -48,23 +48,24 @@ class GenerationService:
         )
 
     # ---------------- 生成 ----------------
-    def generate(self, query: str, hits: Sequence[Hit], lang: str = "zh") -> str:
-        """生成讲解文本；模型不可用时给出**可读的说明**而不是让接口 500。
-
-        工单20 集成测试暴露的问题：LLM 走云端额度，额度/网络异常时
-        `raise_for_status()` 会冒到接口层，使 /dialog 与 /dialog/multimodal 直接 500。
-        对话是核心功能，这里统一兜住并给出面向游客的说明，保持链路可用。
-        """
+    def generate_with_status(self, query: str, hits: Sequence[Hit], lang: str = "zh") -> tuple[str, bool]:
+        """返回生成文本及是否降级，供需要区分事实讲解与提示语的调用方使用。"""
         if not hits:
-            return "暂未在景区知识库中检索到相关资料，建议补充更具体的关键词，或上传照片后再试一次。"
+            return "暂未在景区知识库中检索到相关资料，建议补充更具体的关键词，或上传照片后再试一次。", True
         try:
             answer = self.llm.generate(self.build_prompt(query, hits, lang), system=SYSTEM_PROMPT)
         except Exception as exc:
             logger.warning("生成模型不可用，返回降级提示：%s: %s", type(exc).__name__, exc)
             # 检索已命中资料，故把资料要点直接给游客，避免"什么都答不出来"
             digest = "；".join(hit.chunk.title for hit in list(hits)[:3])
-            return f"讲解服务暂时繁忙，先为你列出相关资料：{digest}。请稍后再试一次获取完整讲解。"
-        return self._sanitize(answer)
+            text = f"讲解服务暂时繁忙，先为你列出相关资料：{digest}。请稍后再试一次获取完整讲解。"
+            return text, True
+        return self._sanitize(answer), False
+
+    def generate(self, query: str, hits: Sequence[Hit], lang: str = "zh") -> str:
+        """生成讲解文本；保留原有字符串返回契约供现有对话链路使用。"""
+        text, _ = self.generate_with_status(query, hits, lang)
+        return text
 
     def translate(self, text: str, target_lang: str) -> str:
         prompt = f"请将下面的讲解词翻译为 {target_lang}：\n{text}"

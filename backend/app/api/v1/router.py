@@ -8,6 +8,7 @@ from fastapi import APIRouter
 
 from . import (
     activity,
+    analytics,
     audit,
     auth,
     avatar,
@@ -21,8 +22,10 @@ from . import (
     perception,
     query,
     search,
+    service,
     session,
     share,
+    ticket,
 )
 
 api_router = APIRouter()
@@ -50,3 +53,13 @@ api_router.include_router(audit.router)
 
 # docs/09 通用化（G1）：目的地 / 景区三层归属
 api_router.include_router(park.router)
+
+# docs/09 通用化（G3）：票种 / 时段库存 / 订单 / 电子票 / 核销
+api_router.include_router(ticket.router)
+
+# docs/09 通用化（G4）：游客服务工单与评价
+api_router.include_router(service.router)
+api_router.include_router(service.review_router)
+
+# docs/09 通用化（G5）：经营分析与游客需求洞察
+api_router.include_router(analytics.router)

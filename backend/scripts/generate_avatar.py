@@ -3,12 +3,18 @@
 工单编号：人工智能CV-AIGC-18-文旅Agent任务工单-智能导览与互动体验
 依据：工单18 要求「虚拟数字人形象须使用图像生成模型或 AIGC 工具生成」。
 
-实现：调用 SiliconFlow 图像生成接口（AIGC 文生图）产出「国风女性讲解员」半身正面像，
+实现：调用 SiliconFlow 图像生成接口（AIGC 文生图）产出「国风女性讲解员」形象，
       随后可直接串联 prepare_avatar.py 完成抠图与口型区定位。
+
+姿势（--pose）：
+  half（默认）= 半身正面像，上半身与双手入画 —— 远景小、面部细节多，适合问答型导览；
+  full        = 全身立绘，含长裙与双足 —— 数字人需要完整形体表现（走位、衣摆）时使用。
+两种姿势都保持同一套服饰与气质描述，外观风格一致。
 
 用法：
   python scripts/generate_avatar.py                 # 生成并落盘原图
   python scripts/generate_avatar.py --no-prepare     # 仅生成，不做抠图/定位
+  python scripts/generate_avatar.py --pose full --id qingci-full
 """
 from __future__ import annotations
 
@@ -34,28 +40,52 @@ CANDIDATE_MODELS = [
     "stabilityai/stable-diffusion-3-5-large",
 ]
 
-PROMPT = (
-    "国风女性数字人讲解员，半身正面肖像，站姿端庄，"
-    "双手在腹部前方自然交叠相握、右手轻搭在左手之上，双臂自然下垂微微弯曲，"
+# 服饰与气质描述：两种姿势共用，避免半身/全身像"看起来不是同一个人"之外的风格漂移
+STYLE_PROMPT = (
     "20 多岁，气质亲和温和，现代改良交领汉服，暖米白与琥珀金配色衣料，"
     "简约发髻配小巧玉簪，正脸平视镜头，表情温和自然，"
     "嘴唇自然闭合不露牙齿，眼神平静注视镜头，双眼自然睁开，"
     "柔和暖调影棚布光，面部光线均匀清晰，皮肤质感细腻，写实高质量渲染，"
-    "纯白色干净背景，上半身与双手完整入画，人物居中，头顶留少量空间"
+    "纯白色干净背景，人物居中"
 )
+
+POSE_PROMPTS = {
+    "half": (
+        "国风女性数字人讲解员，半身正面肖像，站姿端庄，"
+        "双手在腹部前方自然交叠相握、右手轻搭在左手之上，双臂自然下垂微微弯曲，"
+        f"{STYLE_PROMPT}，上半身与双手完整入画，头顶留少量空间"
+    ),
+    "full": (
+        "国风女性数字人讲解员，全身立绘，站姿端庄，"
+        "双手在腹部前方自然交叠相握、右手轻搭在左手之上，双臂自然下垂微微弯曲，"
+        "长裙自然垂坠及地，双足完整可见，身材比例自然，"
+        f"{STYLE_PROMPT}，完整全身入画，头顶与脚下均留少量空间"
+    ),
+}
 
 NEGATIVE_PROMPT = "文字, 水印, 签名, 边框, 多人, 侧脸, 张嘴大笑, 复杂背景, 卡通, 变形, 低清晰度"
 
 
-def generate(model: str, width: int, height: int, seed: int | None) -> str:
+def build_prompt(pose: str) -> str:
+    return POSE_PROMPTS.get(pose, POSE_PROMPTS["half"])
+
+
+def build_negative_prompt(pose: str) -> str:
+    if pose == "full":
+        # 全身像最怕被裁掉下半身：显式排除"画面截断/半身/缺腿"这类构图
+        return f"{NEGATIVE_PROMPT}, 截断, 半身构图, 缺少腿部, 缺少脚部, 空白下半身"
+    return NEGATIVE_PROMPT
+
+
+def generate(model: str, width: int, height: int, seed: int | None, pose: str = "half") -> str:
     settings = get_settings()
     if not settings.siliconflow_api_key:
         raise SystemExit("未配置 SILICONFLOW_API_KEY，无法调用图像生成接口")
 
     payload = {
         "model": model,
-        "prompt": PROMPT,
-        "negative_prompt": NEGATIVE_PROMPT,
+        "prompt": build_prompt(pose),
+        "negative_prompt": build_negative_prompt(pose),
         "image_size": f"{width}x{height}",
         "batch_size": 1,
         "num_inference_steps": 30,
@@ -95,6 +125,7 @@ def main() -> None:
     parser.add_argument("--model", default=None, help="指定模型；默认按候选列表依次尝试")
     parser.add_argument("--no-prepare", action="store_true", help="仅生成，不执行抠图与关键点定位")
     parser.add_argument("--method", default="keying", choices=["keying", "sam", "rembg"], help="去背景方式")
+    parser.add_argument("--pose", default="half", choices=["half", "full"], help="姿势：half 半身像 / full 全身立绘")
     args = parser.parse_args()
 
     AVATAR_DIR.mkdir(parents=True, exist_ok=True)
@@ -104,9 +135,9 @@ def main() -> None:
     last_error = ""
     for model in models:
         started = time.time()
-        print(f"[generate] 尝试模型 {model} …")
+        print(f"[generate] 尝试模型 {model}（{args.pose}）…")
         try:
-            url = generate(model, args.width, args.height, args.seed)
+            url = generate(model, args.width, args.height, args.seed, pose=args.pose)
             download(url, raw_path)
             print(f"[generate] 成功 {model}（{time.time() - started:.1f}s）-> {raw_path}")
             print(f"[generate] 图像地址：{url}")

@@ -112,6 +112,34 @@ def _submit(kind: str, uris: list[str], options: dict, owner: str) -> dict:
 
 
 # --------------------------------------------------------------------------
+# 上游通道异常 → 可读响应
+# --------------------------------------------------------------------------
+def _upstream_error(exc: Exception, action: str) -> HTTPException:
+    """把 AIGC 上游的通道异常翻成可读的、状态码正确的响应。
+
+    原先五处都是 `HTTPException(500, f"…失败：{exc}")`，有两个问题：
+      1. **状态码失真**：402（额度）/ 401（鉴权）/ 429（限流）都是**上游可用性**问题，
+         归成 500 会让运维从监控上判断成"后端代码崩了"，排查方向完全错。
+      2. **原文外泄且无意义**：`Client error '402 Payment Required' for url …`
+         是 httpx 的英文消息，直接展示给运营与游客既看不懂、也暴露了供应商标识。
+
+    因此按上游语义映射到 503/504，并给出可行动的中文说明；
+    未知异常仍返回 500，但不再回显原始异常文本（详情只进服务端日志）。
+    """
+    text = str(exc)
+    lowered = text.lower()
+    if "402" in text or "payment required" in lowered:
+        return HTTPException(status_code=503, detail=f"{action}服务额度不足，请稍后重试或联系管理员")
+    if "401" in text or "403" in text or "unauthorized" in lowered:
+        return HTTPException(status_code=503, detail=f"{action}服务鉴权失败，请检查服务端密钥配置")
+    if "429" in text or "rate limit" in lowered:
+        return HTTPException(status_code=503, detail=f"{action}服务请求过于频繁，请稍后重试")
+    if "timeout" in lowered or "timed out" in lowered:
+        return HTTPException(status_code=504, detail=f"{action}服务响应超时，请稍后重试")
+    return HTTPException(status_code=500, detail=f"{action}失败，请稍后重试")
+
+
+# --------------------------------------------------------------------------
 # 图像类
 # --------------------------------------------------------------------------
 @router.post("/image", response_model=ApiResponse)
@@ -153,7 +181,7 @@ async def create_image(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("纪念图片生成失败：%s", exc)
-        raise HTTPException(status_code=500, detail=f"生成失败：{exc}") from exc
+        raise _upstream_error(exc, "纪念图片生成") from exc
     return ApiResponse(data=asset, trace_id=uuid.uuid4().hex)
 
 
@@ -200,7 +228,7 @@ async def create_video(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("短视频合成失败：%s", exc)
-        raise HTTPException(status_code=500, detail=f"合成失败：{exc}") from exc
+        raise _upstream_error(exc, "短视频合成") from exc
     return ApiResponse(data=asset, trace_id=uuid.uuid4().hex)
 
 
@@ -230,7 +258,7 @@ def create_guide(payload: GuideRequest) -> ApiResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("攻略生成失败：%s", exc)
-        raise HTTPException(status_code=500, detail=f"攻略生成失败：{exc}") from exc
+        raise _upstream_error(exc, "攻略生成") from exc
     return ApiResponse(data=data, trace_id=uuid.uuid4().hex)
 
 
@@ -247,7 +275,7 @@ def create_map(payload: MapRequest) -> ApiResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("导览地图生成失败：%s", exc)
-        raise HTTPException(status_code=500, detail=f"导览地图生成失败：{exc}") from exc
+        raise _upstream_error(exc, "导览地图生成") from exc
     return ApiResponse(data=asset, trace_id=uuid.uuid4().hex)
 
 
@@ -267,7 +295,7 @@ async def create_ppt(
         )
     except Exception as exc:
         logger.exception("活动回顾 PPT 生成失败：%s", exc)
-        raise HTTPException(status_code=500, detail=f"PPT 生成失败：{exc}") from exc
+        raise _upstream_error(exc, "活动回顾 PPT 生成") from exc
     return ApiResponse(data=asset, trace_id=uuid.uuid4().hex)
 
 
